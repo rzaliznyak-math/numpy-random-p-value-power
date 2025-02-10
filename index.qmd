@@ -1,0 +1,934 @@
+---
+title: "Experiment Design & Analysis with NumPy Random"
+subtitle: "Understanding P-values and Statistical Power with NumPy Simulations"
+author: "Russ Zaliznyak <[rzaliznyak@gmail.com](mailto:rzaliznyak@gmail.com)>"
+date: "2025-02-08"
+execute:
+  echo: false
+format: 
+  html: 
+    css: style.css
+    toc: true
+    toc-expand: true
+    toc-indent: 1em
+jupyter: python3
+---
+
+
+# Introduction
+
+The goal of this paper is to continue to build on our last paper, [The Power of Data Simulation](https://rzaliznyak-math.github.io/random/){target="_blank"}.
+
+We will use `numpy.random` simulations to visualize and learn about two crucial concepts in AB Testing:
+
+1. **`p-value`**: Statistic used in AB Testing to declare winners
+2. **`Statistical Power`**: Strength of an AB Test Design
+
+By the end of this paper you'll be able to use NumPy to design and analyze traditional Significance Tests; naturally building your intuition for _probabilistic thinking_.
+
+# Significance Test
+
+A *significance test* assumes that test conditions are identical. After the test, we calculate a _**`p-value`**_. 
+
+**Definition**: The p-value estimates the probability of seeing our experiment (or more extreme), given equality between our two test conditions.
+
+If the p-value is low enough, we are compelled to conclude that our assumption of equality of test conditions is faulty. This is referred to as a _**`Statistically Significant`**_ result.
+
+# Our First Fixed AB Test
+
+Let's imagine a test of two websites A (Control) & B (Treatment) where each site gets 10,000 visitors.
+Below are conversion rate results for each site. Is it time to celebrate?
+
+::: {.fragment style="margin-top: -10px; font-size: 100%"}
+```{python}
+#| code-fold: true
+#| echo: true
+import plotly.graph_objects as go
+import scipy.stats as stats
+from numpy.random import binomial, seed
+
+# Given data
+control_rate = 0.50
+treatment_rate = control_rate
+number_trials_per_condition = int(1e4)
+
+# Simulate data
+seed(9)
+control_events = binomial(number_trials_per_condition, control_rate, 1)[0]
+treatment_events = binomial(number_trials_per_condition, treatment_rate, 1)[0]
+
+# Compute conversion rates
+control_conversion = control_events / number_trials_per_condition * 100
+treatment_conversion = treatment_events / number_trials_per_condition * 100
+INTUIT_BLUE = "#0177c9"
+
+# Create bar chart using Plotly
+fig = go.Figure()
+
+fig.add_trace(go.Bar(
+    x=['A (Control)', 'B (Treatment)'],
+    y=[control_conversion, treatment_conversion],
+    text=[f'{control_conversion:.2f}%', f'{treatment_conversion:.2f}%'],
+    textposition='auto',
+    textfont_size=18,  # Increased text size on bars
+    marker=dict(color=INTUIT_BLUE, line=dict(color='black', width=1))
+))
+
+# Layout adjustments
+fig.update_layout(
+    title="Conversion Rate Comparison",
+    title_font_size=20,  # Larger title text
+    xaxis=dict(
+        title="Condition",
+        title_font_size=18,  # Larger x-axis label
+        tickfont_size=16  # Larger x-axis tick labels
+    ),
+    yaxis=dict(
+        title="Conversion Rate (%)",
+        title_font_size=18,  # Larger y-axis label
+        tickfont_size=16,  # Larger y-axis tick labels
+        range=[min(control_conversion, treatment_conversion) - 1, 
+               max(control_conversion, treatment_conversion)]
+    ),
+    plot_bgcolor='rgba(240,240,240,0.5)',
+)
+
+# Show plot
+fig.show()
+
+
+```
+
+```{python}
+conv_rate_control = control_events / number_trials_per_condition
+conv_rate_treatment = treatment_events / number_trials_per_condition
+avg_difference = conv_rate_treatment - conv_rate_control
+# Pooled proportion
+p_pool = (control_events + treatment_events) / (
+    number_trials_per_condition + number_trials_per_condition
+)
+
+# Standard error
+se = (
+    p_pool
+    * (1 - p_pool)
+    * (1 / number_trials_per_condition + 1 / number_trials_per_condition)
+) ** 0.5
+
+# Z-score calculation
+z_score = (conv_rate_treatment - conv_rate_control) / se
+
+
+# One-tailed p-value
+p_value = 1 - stats.norm.cdf(abs(z_score))
+```
+
+`Observed Treatment Effect` = `{python} f"{avg_difference:.2%}"`<br>
+Using a z-score approximation yields **p-value = `{python} round(p_value,3)`**.<br>
+
+
+```{python}
+#| code-fold: true
+#| echo: true
+# One-tailed p-value
+conv_rate_control = control_events / number_trials_per_condition
+conv_rate_treatment = treatment_events / number_trials_per_condition
+avg_difference = conv_rate_treatment - conv_rate_control
+# Pooled proportion
+p_pool = (control_events + treatment_events) / (
+    number_trials_per_condition + number_trials_per_condition
+)
+
+# Standard error
+se = (
+    p_pool
+    * (1 - p_pool)
+    * (1 / number_trials_per_condition + 1 / number_trials_per_condition)
+) ** 0.5
+
+# Z-score calculation
+z_score = (conv_rate_treatment - conv_rate_control) / se
+
+
+# One-tailed p-value
+p_value = 1 - stats.norm.cdf(abs(z_score))
+```
+:::
+
+
+```{python}
+NUMBER_SIMULATIONS = int(1e6)
+```
+
+## Exact P-Value With Sims
+
+To calculate p-values manually, we simulate results with `numpy.random.binomial` by randomly sampling from two identical websites, both converting at 50% with 10,000 samples each. We repeat simuations up to `{python} f"{NUMBER_SIMULATIONS:,}"` times for each website.
+
+```{python}
+#| code-fold: true
+#| echo: true
+from numpy.random import binomial, seed
+
+
+number_trials_per_condition = int(1e4)
+conversion_rate = 0.50
+NUMBER_SIMULATIONS = int(1e6)
+BLUE = "#0177c9"
+
+seed(42)
+
+# Simulate conversions for the first website (single batch)
+conversions_1 = binomial(
+    n=number_trials_per_condition, p=conversion_rate, size=NUMBER_SIMULATIONS
+)
+
+# Simulate conversions for the second website (separately generated)
+conversions_2 = binomial(
+    n=number_trials_per_condition, p=conversion_rate, size=NUMBER_SIMULATIONS
+)
+
+# Compute differences
+conversion_differences = conversions_2 - conversions_1
+
+```
+
+
+_**`Central Limit Theorem`**_: Watch how normality of averages is revealed with enough simulations.
+
+
+#### Website A
+
+```{python}
+#| code-fold: true
+#| echo: true
+#| label: fig-website-a
+#| fig-cap: "Website Conversion = 50% with 10k samples per test condition"
+from math import ceil
+
+import pandas as pd
+import plotly.express as px
+import plotly.subplots as sp
+from numpy import (array, array_equal, cumsum, linspace, max, mean, min,
+                   percentile, where)
+
+# Store all posteriors
+all_posteriors = (
+    array([conversions_1, conversions_2, conversion_differences])
+    / number_trials_per_condition
+)
+
+number_simulations_list = [
+    #500,
+    1000,
+    5000,
+    100000,
+]
+
+
+all_figs = []
+
+count = 1
+for posterior in all_posteriors:
+  df = pd.DataFrame(posterior, columns=["value"])
+  running_total_df = df.copy()
+
+  # Count occurrences and create a running total
+  running_total_df["count"] = running_total_df["value"].map(
+      running_total_df["value"].value_counts()
+  )
+  running_total_df["running_total"] = running_total_df.groupby("value").cumcount() + 1
+
+  # Rearranging to match the running total of occurrences
+  running_total_df = running_total_df[["value", "count", "running_total"]]
+
+  subplot_titles = tuple([f"# sims = {value:,}" for value in number_simulations_list])
+  number_simulations_list_length = len(number_simulations_list)
+
+  number_cols = number_simulations_list_length
+  number_rows = ceil(number_simulations_list_length / number_cols)
+  BLUE = "#82b2e0"
+  RED = "#bd0707"
+  fig = sp.make_subplots(
+      rows=number_rows,
+      cols=number_cols,
+      subplot_titles=subplot_titles,
+      vertical_spacing=0.1,
+  )
+
+  for j in range(len(number_simulations_list)):
+      number = number_simulations_list[j]
+      fig_0 = px.scatter(
+          running_total_df[0:number],
+          x="value",
+          y="running_total",
+          color_discrete_sequence=[BLUE],
+      )
+
+      row = 1 + int(j / number_cols)
+      col = 1 + j - (row - 1) * number_cols
+      fig.add_trace(fig_0.data[0], row=row, col=col)
+
+  x_ticks = (
+      [0.485, 0.5, 0.515]
+      if count != len(all_posteriors)
+      else [-0.02, 0, 0.02]
+  )
+  for j in range(len(number_simulations_list) + 1):
+    row = 1
+    col = j
+
+    fig.update_xaxes(
+        tickformat=".1%",
+        tickvals=x_ticks if j > 0 else [int(df["value"].iloc[0])],
+        row=row,
+        col=col,
+    )
+
+  fig.update_layout(height=300)
+  all_figs.append(fig)
+  count+=1
+
+all_figs[0].show()
+```
+
+#### Website A (Copy)
+
+```{python}
+#| label: fig-website-a-copy
+#| fig-cap: "Simulations of Website A (Copy) aren't copies of Website A simulations"
+all_figs[1].show()
+```
+While both websites convert at 50% on average, there is variation in their results. Sometimes A (Copy) outperforms, sometimes A.
+
+#### Difference of Website A vs Website A
+
+```{python}
+#| label: fig-website-a-a
+#| fig-cap: Differences of means reveal variance even between identical websites
+all_figs[2].show()
+```
+
+When we difference results from A vs A (copy), we see that average difference is centered at **0.00%**, but can vary as much as ±2%.
+
+## Our First P-Value
+
+Recall that our initial A/B test showed an `Observed Treatment Effect` = `{python} round(100*avg_difference,2)`% in favor of **B**. Let's zoom into our `{python} f"{NUMBER_SIMULATIONS:,}"` simulated A/A tests and highlight the area where differences are at least `{python} round(100*avg_difference,2)`%.
+
+
+```{python}
+#| code-fold: true
+#| echo: true
+#| label: fig-null-one
+#| fig-cap: "6.1% of simulated A/A experiments fall beyond 1.09%"
+import plotly.express as px
+
+# Define a new column for color
+running_total_df["Area"] = running_total_df["value"].apply(
+    lambda x: "p-value" if x > avg_difference else "1 - p-value"
+)
+
+fig_0 = px.scatter(
+    running_total_df,
+    x="value",
+    y="running_total",
+    color="Area",  # Use the new color column
+    color_discrete_map={
+        "p-value": "green",
+        "1 - p-value": BLUE,
+    },  # Keep your previous blue color
+)
+fig_0.update_layout(hovermode=False, xaxis=dict(tickformat=".1%"),
+
+    legend=dict(
+        font=dict(size=16),  # Increase legend text size
+        itemsizing='constant',  # Keeps symbol size larger
+    )
+    )
+fig_0.update_yaxes(title = "", showticklabels = False)
+fig_0.update_xaxes(title="Difference of Means")
+fig_0.show()
+
+```
+
+
+```{python}
+p_value_simulations = mean(where(posterior >= avg_difference, 1, 0))
+```
+
+- Only `{python} f"{sum(where(posterior >= avg_difference, 1, 0)):,}"` out of our `{python} f"{NUMBER_SIMULATIONS:,}"` simulated A/A tests breached `{python} round(100*avg_difference,2)`%.
+
+- Assuming our first AB Test is actually an A/A test, the chance of getting such an experiment is `{python} round(p_value_simulations,3)`.
+
+- In other words, p-value = `{python} round(p_value_simulations,3)`.
+
+## Proper P-Value Practice
+
+Recall that a **`p-value`** estimates the chance of seeing our experiment (or more extreme), given equality between test conditions. If it's low enough, we throw away our assumption of equality of test conditions.
+
+But that's it. It doesn't tell you how accurate your `Observed Treatment Effect` is.
+
+
+::: {.callout-caution collapse="false"}
+## **Significance Threshold**
+
+::: {style="margin-top: 0px; font-size: 100%"}
+How unlikely must your experiment be (low p-value) to reject your initial assumption of equality?
+Traditionally, a Significance Threshold of `α = 0.10` or `α = 0.05` is used.
+
+`α` controls the rate of False Positives (Type I Error). **Choose wisely.**
+
+
+:::
+
+:::
+
+# Our First Test Design
+
+We learned how to use p-values to analyze the results of an experiment. But how do we design a quality experiment in the first place? We need to  simulate two distributions.
+
+**Null Distribution**: The range of expected differences when our two test conditions are equal,  an A/A test. <br>
+**Alternative Distribution**: The range of expected differences when our test effect is present, an A/B test.
+
+
+We will use these distributions to determine how many samples per test condition we need for a quality experiment.
+
+
+## Null Distribution
+
+We use our previous `{python} f"{NUMBER_SIMULATIONS:,}"` A/A simulations, with Baseline = 50% and 10k signups per condition.
+
+
+Setting our *Significance Threshold*, `α = 0.05`, future experiments that fall into the red sections (each 2.5%) are so atypical, that we will be forced to reject the assumption that A = B. 
+
+Since 5% of A/A simulations fall into this region, our False Positive Risk is 5%. We can lower `α` to reduce this probability, but you will see later it comes at a cost.
+
+```{python}
+#| code-fold: true
+#| echo: true
+#| label: fig-null
+#| fig-cap: "95% of simulated A/A tests fall into (-1.38%, 1.38%)"
+import plotly.express as px
+import plotly.graph_objects as go
+from numpy import percentile
+
+# Define alpha level
+alpha = 0.025
+
+# Compute Significance Threshold boundary
+rejection_difference = percentile(all_posteriors[2], 100 - alpha * 100)
+
+# Define a new column for color based on the Significance Threshold
+running_total_df["Area"] = running_total_df["value"].apply(
+    lambda x: "Stats Sig" if abs(x) > rejection_difference else "Retain Assumption"
+)
+
+# Create scatter plot
+fig_0 = px.scatter(
+    running_total_df,
+    x="value",
+    y="running_total",
+    color="Area",  # Use the new color column
+    color_discrete_map={
+        "Stats Sig": "red",
+        "Retain Assumption": BLUE,  # Fixed the BLUE variable
+    },
+)
+
+# Add vertical lines for Significance Thresholds
+for x_pos, text in zip(
+    [rejection_difference, -rejection_difference],
+    [f"{rejection_difference:.2%}", f"{-rejection_difference:.2%}"],
+):
+    fig_0.add_shape(
+        go.layout.Shape(
+            type="line",
+            x0=x_pos,
+            x1=x_pos,
+            y0=running_total_df["running_total"].min(),
+            y1=running_total_df["running_total"].max(),
+            line=dict(color="black", width=2, dash="dash"),
+        )
+    )
+
+    # Add text annotation next to the vertical line
+    fig_0.add_annotation(
+        x=x_pos,
+        y=running_total_df["running_total"].max(),
+        text=text,
+        showarrow=False,
+        yshift=10,  # Shift text slightly above the line
+        font=dict(size=14, color="black"),
+    )
+
+# Customize layout
+fig_0.update_layout(
+    hovermode=False,
+    xaxis=dict(tickformat=".1%"),
+    legend=dict(
+        font=dict(size=16),  # Increase legend text size
+        itemsizing="constant",  # Keeps symbol size larger
+    ),
+)
+
+# Hide y-axis title and labels
+fig_0.update_yaxes(title="", showticklabels=False)
+fig_0.update_xaxes(title="Difference of Means")
+
+# Show figure
+fig_0.show()
+
+```
+
+## Alternative Distribution
+
+The team worked really hard and developed a new website that potentially converts at 51% `(MDE = 1.02 = 51/50)`.
+What is the probability our experiment identifies a winner (_**`Statistical Power`**_)? 
+
+In order to calculate this, we need to simulate two websites:
+
+- Control Website converting at 50% with `{python} f"{number_trials_per_condition:,}"` visitors
+- Treatment Website converting at 51% with `{python} f"{number_trials_per_condition:,}"` visitors
+
+The resulting differences of means will be our Alternative Distribution.
+
+
+```{python}
+#| code-fold: true
+#| echo: true
+#| label: fig-alt
+#| fig-cap: "Only 29% of simulated A/B tests manage to exceed 1.38%"
+from numpy.random import binomial, seed
+
+
+number_trials_per_condition = int(1e4)
+conversion_rate = 0.50
+treatment_rate = 0.51
+# BLUE = "#0177c9"
+
+seed(1)
+
+
+# Simulate conversions for the first website (single batch)
+control_conversions_alt = binomial(
+    n=number_trials_per_condition, p=conversion_rate, size=NUMBER_SIMULATIONS
+)
+
+# Simulate conversions for the second website (separately generated)
+treatment_conversions = binomial(
+    n=number_trials_per_condition, p=treatment_rate, size=NUMBER_SIMULATIONS
+)
+
+# Compute differences
+conversion_differences_alt = treatment_conversions - control_conversions_alt
+
+df = pd.DataFrame(conversion_differences_alt, columns=["value"])
+running_total_df = df.copy()
+
+# Count occurrences and create a running total
+running_total_df["count"] = running_total_df["value"].map(
+    running_total_df["value"].value_counts()
+)
+
+
+running_total_df["running_total"] = running_total_df.groupby("value").cumcount() + 1
+
+running_total_df["value"] = running_total_df["value"] / number_trials_per_condition
+
+
+# Rearranging to match the running total of occurrences
+running_total_df = running_total_df[["value", "count", "running_total"]]
+running_total_df["Area"] = running_total_df["value"].apply(
+    lambda x: "Stats Sig" if x > rejection_difference else "Not Stats Sig"
+)
+
+
+alt_fig = px.scatter(
+    running_total_df,
+    x="value",
+    y="running_total",
+    color="Area",  # Use the new color column
+    color_discrete_map={
+        "Stats Sig": "green",
+        "Not Stats Sig": BLUE,
+    },  # Keep your previous blue color
+)
+alt_fig.update_layout(
+    hovermode=False,
+    xaxis=dict(tickformat=".1%"),
+    legend=dict(
+        font=dict(size=16),  # Increase legend text size
+        itemsizing="constant",  # Keeps symbol size larger
+    ),
+)
+
+alt_fig.add_shape(
+    go.layout.Shape(
+        type="line",
+        x0=rejection_difference,
+        x1=rejection_difference,
+        y0=running_total_df["running_total"].min(),
+        y1=running_total_df["running_total"].max(),
+        line=dict(color="black", width=2, dash="dash"),
+    )
+)
+
+# Add text annotation next to the vertical line
+alt_fig.add_annotation(
+    x=rejection_difference,
+    y=running_total_df["running_total"].max(),
+    text=f"Significance Threshold = {rejection_difference:.2%}",
+    showarrow=False,
+    yshift=10,  # Shift text slightly above the line
+    font=dict(size=14, color="black"),
+)
+alt_fig.update_yaxes(title="", showticklabels=False)
+alt_fig.update_xaxes(title="Difference of Means")
+alt_fig.show()
+
+share_of_winners = sum(
+    where(
+        conversion_differences_alt / number_trials_per_condition > rejection_difference,
+        1,
+        0,
+    )
+)
+```
+ 
+
+**`Statistical Power`**: This experiment design is lousy. Though we programmed condition **B** to convert at 51%, only `{python} f"{share_of_winners/NUMBER_SIMULATIONS:.2%}"` of our `{python} f"{NUMBER_SIMULATIONS:,}"` A/B simulations fall beyond our Significance Threshold.<br>
+
+We need more samples to make our experiment more reliable.
+
+
+## Increase Statistical Power
+In order for our experiment to have a better chance of finding a winner, we need to up its `Statistical Power` by increasing number of samples in each condition. Let's simulate experiments for 10,000; 20,000; and 40,000 samples per test condition.
+
+
+```{python}
+#| code-fold: true
+#| echo: true
+
+from numpy.random import binomial, seed
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from numpy import mean, where, percentile
+from IPython.display import display, Markdown
+
+seed(42)
+conversion_rate = 0.50
+treatment_rate = 0.51
+BLUE = "#0177c9"
+alpha = 0.025  # Significance level (two-tail)
+number_trials_per_condition_list = [int(1e4), int(2e4), int(4e4)]
+number_trials_per_condition_list_count = len(number_trials_per_condition_list)
+
+# Create subplot structure with reduced vertical spacing
+
+fig = make_subplots(
+    rows=number_trials_per_condition_list_count,
+    cols=1,
+    shared_xaxes=True,
+    vertical_spacing=0.15,
+)
+
+for i, number_trials_per_condition in enumerate(number_trials_per_condition_list):
+    conversions_1 = binomial(
+        n=number_trials_per_condition, p=conversion_rate, size=NUMBER_SIMULATIONS
+    )
+    conversions_2 = binomial(
+        n=number_trials_per_condition, p=conversion_rate, size=NUMBER_SIMULATIONS
+    )
+    conversion_differences = (
+        conversions_2 - conversions_1
+    ) / number_trials_per_condition
+
+    seed(1)
+    control_conversions_alt = binomial(
+        n=number_trials_per_condition, p=conversion_rate, size=NUMBER_SIMULATIONS
+    )
+    treatment_conversions = binomial(
+        n=number_trials_per_condition, p=treatment_rate, size=NUMBER_SIMULATIONS
+    )
+    conversion_differences_alt = (
+        treatment_conversions - control_conversions_alt
+    ) / number_trials_per_condition
+
+    rejection_difference = percentile(conversion_differences, 100 - alpha * 100)
+    share_winner = mean(where(conversion_differences_alt > rejection_difference, 1 , 0))
+    # Add histograms
+    fig.add_trace(
+        go.Histogram(
+            x=conversion_differences,
+            nbinsx=50,
+            name="A/A Simulations",
+            marker=dict(color="#0177c9"),
+            opacity=0.6,
+            showlegend=False if i > 0 else True,
+        ),
+        row=i + 1,
+        col=1,
+    )
+
+    fig.add_trace(
+        go.Histogram(
+            x=conversion_differences_alt,
+            nbinsx=50,
+            name="A/B Simulations",
+            marker=dict(color="#ff5733"),
+            opacity=0.6,
+            showlegend=False if i > 0 else True,
+        ),
+        row=i + 1,
+        col=1,
+    )
+
+    # Add vertical rejection lines
+    fig.add_vline(
+        x=rejection_difference,
+        line=dict(color="black", width=3, dash="dash"),
+        row=i + 1,
+        col=1,
+        annotation=dict(
+            text=f"Significance Threshold: {rejection_difference:.2%}",
+            font=dict(size=14, color="black"),
+            arrowhead=2,
+            x=rejection_difference,
+            y=0.99,
+        ),
+    )
+    fig.add_vline(
+        x=-rejection_difference,
+        line=dict(color="black", width=3, dash="dash"),
+        row=i + 1,
+        col=1,
+        annotation=dict(
+            text=f"Significance Threshold: {-rejection_difference:.2%}",
+            font=dict(size=14, color="black"),
+            arrowhead=2,
+            xanchor="right",
+            x=-rejection_difference,
+            y=0.99,
+        ),
+    )
+    fig.add_annotation(
+        # xref="paper",
+        yref="y domain",
+        row=i + 1,
+        col=1,  # Reference the subplot's domain
+        x=-0.035,  # Align text to the left
+        y=1.30,  # Exactly at the top of the subplot
+        text=f"{number_trials_per_condition:,} samples per test condition",
+        showarrow=False,
+        font=dict(size=18),
+        align="left",
+        xanchor="left",  # Ensures left alignment
+        yanchor="top",  # Ensures the text is positioned at the top
+    )
+    fig.update_xaxes(
+    row=i+1, col=1, title=f"{share_winner:.2%} of A/B Simulations manage to fall beyond the Significance Threshold."
+    )
+
+# Update layout
+fig.update_layout(
+    # xaxis_title="Difference of Means",
+    template="plotly_white",
+    height=550,
+    hovermode=False,
+    barmode="overlay",
+    # showlegend=False,
+)
+fig.update_xaxes(tickformat=".1%")
+fig.update_yaxes(showticklabels=False)
+#fig.update_xaxes(
+#    row=number_trials_per_condition_list_count, col=1, title="Difference of Means"
+#)
+
+
+# Show the figure
+fig.show()
+
+```
+<br>
+
+As we increase `# of samples per condition`, the Significance Threshold shrinks. This is because with more data, our range of expected outcomes shrinks --- this is evident by the narrowing of our distributions.
+
+Finally, by 40,000 samples per condition, over 80% of our A/B simulations fall beyond the Significance Threshold. 
+Our experiment has `{python} f"{share_winner:.2%}"` _**`Statistical Power`**_.
+
+
+::: {.callout-caution collapse="false"}
+## **Statistical Power**
+
+::: {style="margin-top: 0px; font-size: 100%"}
+How sure do you want to be that your experiment doesn't miss out on a winner? 
+Traditionally, Statistical power `(1-β) = 0.80` is used.
+
+`β` controls the rate of False Negatives (Type II Error). **Choose wisely.**
+
+
+:::
+
+:::
+
+# Conclusion
+
+We used `numpy.random` simulations to explore p-values and statistical power, key concepts in A/B testing. 
+
+- We visualized the Null Distribution to understand expected variability in A/A tests and set significance thresholds, controlling for Type I Errors (False Positives). 
+- We simulated the Alternative Distribution to measure how often our test detects a true effect (Statistical Power), thereby controlling for Type II Errors (False Negatives).
+
+A key insight is that the `p-value` alone doesn't confirm a treatment effect —- it merely measures how surprising results are under the assumption of no difference. <br>
+Meanwhile, `statistical power` ensures our experiment is sensitive enough to detect real effects. By increasing sample size, we improved our test’s reliability, achieving the industry standard of 80% power.
+
+
+# Extras
+
+Included here is a method to calculate required samples using z-score approximations.
+
+```{python}
+#| code-fold: true
+#| echo: true
+
+from math import ceil, sqrt
+from scipy.stats import norm
+
+
+def two_proportion_required_samples(
+    alpha,
+    power,
+    control_rate,
+    treatment_rate,
+    control_to_treatment_ratio=1,
+    tail_type="one_tail",
+):
+    """Calculate the required number of samples for two-proportion test.
+    :param float alpha: Value in (0,1) that specifies desired False Positive Rate
+    :param float power: Value in (0,1) that specifies desired 1 - False Negative Rate
+    :param float control_rate: Value in (0,1) that specifies expected control rate
+    :param float treatment_rate: Value in (0,1) that specifies expected treatment rate
+    :param float control_to_treatment_ratio: The ratio of control to treatment samples
+    :param string tail_type: Specifies one-tail or two-tail experiment\n
+        Defaults to "two_tail" if anything other than "one_tail" is given
+    :return: prob_tuple: Tuple of required control samples and treatment samples
+    :rtype: tuple
+    """
+    alpha_adjusted = (
+        alpha if tail_type is None or tail_type.lower() == "one_tail" else alpha / 2
+    )
+    beta = 1 - power
+
+    ##Determine how extreme z-score must be to reach statistically significant result
+    z_stat_critical = norm.ppf(1 - alpha_adjusted)
+    ##Determine z-score of Treatment - Control that corresponds to a True Positive Rate (1-beta)
+    z_power_critical = norm.ppf(beta)
+    ##Expected Difference between treatment and control
+    expected_delta = treatment_rate - control_rate
+    ##Control Allocation Rate
+    control_allocation = control_to_treatment_ratio / (control_to_treatment_ratio + 1)
+    ##Treatment Allocation Rate
+    treatment_allocation = 1 - control_allocation
+
+    ##Calculate Variance of Treatment Rate - Control Rate
+    blended_p = (
+        treatment_rate * treatment_allocation + control_rate * control_allocation
+    )
+    blended_q = 1 - blended_p
+    variance_blended = (
+        blended_p * blended_q / (control_allocation * treatment_allocation)
+    )
+    ##Total Samples Required
+    total_samples_required = (
+        variance_blended
+        * ((z_power_critical - z_stat_critical) / (0 - expected_delta)) ** 2
+    )
+    ##Split total samples into control and treatment
+    control_samples = ceil(control_allocation * total_samples_required)
+    treatment_samples = ceil(treatment_allocation * total_samples_required)
+    ##Perhaps return required_delta in the future
+    required_delta = z_stat_critical * sqrt(variance_blended) + 0
+    return (control_samples, treatment_samples)
+
+```
+
+Using our first test design example, we get a very good approximation using z-scores.
+```{python}
+#| code-fold: false
+#| echo: true
+
+
+control_samples, treatment_samples = two_proportion_required_samples(
+    alpha = 0.05,
+    power = 0.8074,
+    control_rate = 0.50,
+    treatment_rate = 0.51,
+    control_to_treatment_ratio=1,
+    tail_type="two_tail")
+
+print(f"Control Samples: {control_samples:,}")
+print(f"Treatment Samples: {treatment_samples:,}")
+
+```
+
+One-tail experiments require fewer samples!
+
+```{python}
+#| code-fold: false
+#| echo: true
+
+
+control_samples, treatment_samples = two_proportion_required_samples(
+    alpha = 0.05,
+    power = 0.8074,
+    control_rate = 0.50,
+    treatment_rate = 0.51,
+    control_to_treatment_ratio=1,
+    tail_type="one_tail")
+
+print(f"Control Samples: {control_samples:,}")
+print(f"Treatment Samples: {treatment_samples:,}")
+
+```
+
+Reducing `Significance Threshold (α)` reduces False Positives, but comes at the expense of increased sample requirements. 
+
+```{python}
+#| code-fold: false
+#| echo: true
+
+
+control_samples, treatment_samples = two_proportion_required_samples(
+    alpha = 0.01,
+    power = 0.8074,
+    control_rate = 0.50,
+    treatment_rate = 0.51,
+    control_to_treatment_ratio=1,
+    tail_type="one_tail")
+    
+print(f"Control Samples: {control_samples:,}")
+print(f"Treatment Samples: {treatment_samples:,}")
+
+```
+
+Increasing Statistical Power `Significance Threshold (1-β)` reduces False Negatives, but comes at the expense of increased sample requirements. 
+
+```{python}
+#| code-fold: false
+#| echo: true
+
+
+control_samples, treatment_samples = two_proportion_required_samples(
+    alpha = 0.01,
+    power = 0.90,
+    control_rate = 0.50,
+    treatment_rate = 0.51,
+    control_to_treatment_ratio=1,
+    tail_type="one_tail")
+
+print(f"Control Samples: {control_samples:,}")
+print(f"Treatment Samples: {treatment_samples:,}")
+
+```
+
+# Acknowledgements
+
+Big THANK YOU to my colleague Joseph Powers, PhD, who introduced me to _Quarto_ and using simulation studies to make my work life easier.
