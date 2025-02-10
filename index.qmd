@@ -858,7 +858,7 @@ Using our first test design example, we get a very good approximation using z-sc
 
 control_samples, treatment_samples = two_proportion_required_samples(
     alpha = 0.05,
-    power = 0.8074,
+    power = 0.8069,
     control_rate = 0.50,
     treatment_rate = 0.51,
     control_to_treatment_ratio=1,
@@ -878,7 +878,7 @@ One-tail experiments require fewer samples!
 
 control_samples, treatment_samples = two_proportion_required_samples(
     alpha = 0.05,
-    power = 0.8074,
+    power = 0.8069,
     control_rate = 0.50,
     treatment_rate = 0.51,
     control_to_treatment_ratio=1,
@@ -898,7 +898,7 @@ Reducing `Significance Threshold (α)` reduces False Positives, but comes at the
 
 control_samples, treatment_samples = two_proportion_required_samples(
     alpha = 0.01,
-    power = 0.8074,
+    power = 0.8069,
     control_rate = 0.50,
     treatment_rate = 0.51,
     control_to_treatment_ratio=1,
