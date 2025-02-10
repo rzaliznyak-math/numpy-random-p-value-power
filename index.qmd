@@ -319,7 +319,7 @@ Recall that our initial A/B test showed an `Observed Treatment Effect` = `{pytho
 #| code-fold: true
 #| echo: true
 #| label: fig-null-one
-#| fig-cap: "6.1% of simulated A/A experiments fall beyond 1.09%"
+#| fig-cap: "6.0% of simulated A/A experiments fall beyond 1.09%"
 import plotly.express as px
 
 # Define a new column for color
