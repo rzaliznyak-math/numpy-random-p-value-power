@@ -157,7 +157,7 @@ p_value = 1 - stats.norm.cdf(abs(z_score))
 
 
 ```{python}
-NUMBER_SIMULATIONS = int(1e6)
+NUMBER_SIMULATIONS = int(5e5)
 ```
 
 ## Exact P-Value With Sims
@@ -172,7 +172,7 @@ from numpy.random import binomial, seed
 
 number_trials_per_condition = int(1e4)
 conversion_rate = 0.50
-NUMBER_SIMULATIONS = int(1e6)
+NUMBER_SIMULATIONS = int(5e5)
 BLUE = "#0177c9"
 
 seed(42)
