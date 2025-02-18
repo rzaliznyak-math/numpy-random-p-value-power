@@ -909,7 +909,7 @@ print(f"Treatment Samples: {treatment_samples:,}")
 
 ```
 
-Increasing Statistical Power `Significance Threshold (1-β)` reduces False Negatives, but comes at the expense of increased sample requirements. 
+Increasing `Statistical Power (1-β)` reduces False Negatives, but comes at the expense of increased sample requirements. 
 
 ```{python}
 #| code-fold: false
